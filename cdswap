@@ -1,0 +1,48 @@
+#!/usr/bin/python
+import os
+def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
+    """
+    Find new_dir at the same level as any parents of cwd, where it also contains a matching directory tree between its location and the current level
+    ie. such that cwd.replace(some_dir, new_dir) is still a valid path.
+    If multiple new_dir subdirectories, uses leaf directory as 
+    """
+    sep = os.path.sep
+    current_dirs = cwd.split(sep)
+    new_dir_paths = new_dir.split(sep)
+    if len(new_dir_paths) < 2:
+        new_dir_paths = None
+    for i in range(len(current_dirs)-1,0,-1):
+        try_path = current_dirs[:]
+        if new_dir_paths:
+            try_path[i:] = new_dir_paths
+        else:
+            try_path[i] = new_dir
+        if os.path.exists(sep.join(try_path)):
+            return sep.join(try_path)
+        elif match_incomplete_subtree and os.path.exists(sep.join(try_path[:i+1])):
+            # found dir, but subdirectories of it don't match cwd; try our best
+            # NOTE: could do a binary search, but Im lazy, +expect small search
+            try_part = sep.join(try_path[:i+1])
+            for j in range(len(current_dirs)-1,i,-1):
+                try_path = current_dirs[i+1:j]
+                if os.path.exists(sep.join(try_path)):
+                    return sep.join(try_path)
+            return sep.join(try_path[:i+1])
+    # failed.
+    return None
+
+if __name__=="__main__":
+    import sys
+    try:
+      new_path = find_matching_subtree(os.getcwd(), sys.argv[1], True)
+      if new_path:
+          print new_path
+      else:
+          print >>sys.stderr,"Cannot find",sys.argv[1],"in any parent directories."
+          print os.getcwd() # back to same path
+    except:
+      print >>sys.stderr,"Usage: cdswap new_dir\nHunt for directory new_dir in all parent directories and change to the directory as though the current cwd had been swapped for one where the specified directory is used instead of the current one at that level, or the specified directory if the full subtree below it does not exist (as far down as possible to match the current level below it)."
+      print >>sys.stderr,"The easiest use is by defining a shell function:\n\tfunction cdswap () { cd $($(which cdswap) $1); }"
+      # note: you can also add the script into shell's hash table (won't otherwise as runs in subshell, but doesn't matter if
+      # you're using the above function with 'which'). If you change function name (and hence dont need 'which' to avoid infinite recursion of cdswap function), you can put it into hash table with:
+      # builtin hash cdswap
