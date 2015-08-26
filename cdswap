@@ -1,21 +1,33 @@
 #!/usr/bin/python
 # Apache 2.0 Licenced
 __author__ = "John Garner <cdswap@breez.me.uk>"
-__version__ = "1.1"
+__version__ = "1.2"
 
 import os
 def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
     """
     Find new_dir at the same level as any parents of cwd, where it also contains a matching directory tree between its location and the current level
     ie. such that cwd.replace(some_dir, new_dir) is still a valid path.
+    If multiple new_dir subdirectories, uses as new leaf directory.
     """
     sep = os.path.sep
     current_dirs = cwd.split(sep)
+    new_dir_paths = new_dir.split(sep)
+    if len(new_dir_paths) < 2:
+        new_dir_paths = None
     for i in range(len(current_dirs)-1,0,-1):
         try_path = current_dirs[:]
-        try_path[i] = new_dir
+        if new_dir_paths:
+            try_path[i:] = new_dir_paths
+            try_path_extended = current_dirs[:]
+            try_path_extended[i:i+len(new_dir_paths)] = new_dir_paths
+        else:
+            try_path[i] = new_dir
+            try_path_extended = None
         if os.path.exists(sep.join(try_path)):
             return sep.join(try_path)
+        elif try_path_extended and os.path.exists(sep.join(try_path_extended)):
+            return sep.join(try_path_extended)
         elif match_incomplete_subtree and os.path.exists(sep.join(try_path[:i+1])):
             # found dir, but subdirectories of it don't match cwd; try our best
             # NOTE: could do a binary search, but Im lazy, +expect small search
