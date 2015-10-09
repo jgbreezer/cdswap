@@ -1,9 +1,19 @@
 #!/usr/bin/python
 # Apache 2.0 Licenced
+from __future__ import print_function
+
 __author__ = "John Garner <cdswap@breez.me.uk>"
-__version__ = "1.2"
+__version__ = "1.3"
 
 import os
+try:
+    import curses
+    curses.setupterm()
+    bold = eval("lambda s: '%s%%s%s' %% s" % (curses.tigetstr('bold'),curses.tigetstr('sgr0')))
+except:
+    bold = lambda s: s
+debug=0
+
 def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
     """
     Find new_dir at the same level as any parents of cwd, where it also contains a matching directory tree between its location and the current level
@@ -11,8 +21,12 @@ def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
     If multiple new_dir subdirectories, uses as new leaf directory.
     """
     sep = os.path.sep
+    global debug
     current_dirs = cwd.split(sep)
     new_dir_paths = new_dir.split(sep)
+    if debug:
+        print("current=",sep.join(current_dirs),file=sys.stderr,sep="")
+        boldout=lambda pthlst,idx: sep.join([(idx==i and bold(d) or d) for i,d in enumerate(pthlst)])
     if len(new_dir_paths) < 2:
         new_dir_paths = None
     for i in range(len(current_dirs)-1,0,-1):
@@ -20,14 +34,24 @@ def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
         if new_dir_paths:
             try_path[i:] = new_dir_paths
             try_path_extended = current_dirs[:]
+            # try: replace each path component with just one from existing pwd
             try_path_extended[i:i+len(new_dir_paths)] = new_dir_paths
+            # try: replace single path component with all from new path
+            try_path_compressed = current_dirs[:]
+            try_path_compressed[i:i+1] = new_dir_paths
         else:
             try_path[i] = new_dir
             try_path_extended = None
-        if os.path.exists(sep.join(try_path)):
-            return sep.join(try_path)
-        elif try_path_extended and os.path.exists(sep.join(try_path_extended)):
+            try_path_compressed = None
+        if try_path_extended and os.path.exists(sep.join(try_path_extended)):
+            if debug: print("found dir at",boldout(try_path_extended,i), file=sys.stderr)
             return sep.join(try_path_extended)
+        elif try_path_compressed and os.path.exists(sep.join(try_path_compressed)):
+            if debug: print("found dir at",boldout(try_path_compressed,i), file=sys.stderr)
+            return sep.join(try_path_compressed)
+        elif os.path.exists(sep.join(try_path)):
+            if debug: print("found dir at",boldout(try_path,i), file=sys.stderr)
+            return sep.join(try_path)
         elif match_incomplete_subtree and os.path.exists(sep.join(try_path[:i+1])):
             # found dir, but subdirectories of it don't match cwd; try our best
             # NOTE: could do a binary search, but Im lazy, +expect small search
@@ -35,6 +59,7 @@ def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
             for j in range(len(current_dirs)-1,i,-1):
                 try_path = current_dirs[i+1:j]
                 if os.path.exists(sep.join(try_path)):
+                    if debug: print("found incomplete dir at",boldout(try_path,i), file=sys.stderr)
                     return sep.join(try_path)
             return sep.join(try_path[:i+1])
     # failed.
@@ -42,17 +67,69 @@ def find_matching_subtree(cwd, new_dir, match_incomplete_subtree=False):
 
 if __name__=="__main__":
     import sys
+    import argparse
+    parser = argparse.ArgumentParser(
+        # Usage: %(prog)s [-d] [-x] new_dir
+        description="""
+        Hunt for directory new_dir in all parent directories and change to the directory,
+        retaining as much of the existing pwd path as can work with it.""",
+        epilog="""
+        1st try as though the current cwd had been swapped for one where the specified directory
+        is used instead of the current one at that level, or the specified directory if
+        the full subtree below it does not exist (as far down as possible to match the
+        current level below it).
+
+        The easiest use is by defining a shell function:
+            cdswap () { d=$(command cdswap $1) && builtin cd "$d"; }
+
+        NOTE: can also add the script into shell's hash table (won't otherwise
+        as runs in subshell, but doesn't matter if you're using above function).
+        If you change function name (and hence dont need 'which' to avoid
+        infinite recursion of cdswap function), can add into hash table with:
+        builtin hash cdswap
+        """,
+    )
+    parser.add_argument("-s", action="store_true", dest="symlinks",
+        help="Resolve sym-links to real directory paths"
+    )
+    parser.add_argument("-d", action="store_true",
+        help="enables basic debug output to stderr"
+    )
+    parser.add_argument("-x", action="store_true",
+        help="not yet implemented but intended to restrict to exact swap"
+    )
+    parser.add_argument("dirpath", metavar='PATH', type=str, nargs='+', help="New directory to switch path to include")
+    exitcode = 0
+    args = parser.parse_args()
+    if args.symlinks:
+        pwd = os.getcwd()
+    else:
+        pwd = os.environ.get("PWD")
+        if not pwd:
+            pwd = os.getcwd()
     try:
-      new_path = find_matching_subtree(os.getcwd(), sys.argv[1], True)
-      if new_path:
-          print new_path
-      else:
-          print >>sys.stderr,"Cannot find",sys.argv[1],"in any parent directories."
-          print os.getcwd() # back to same path
+        for path in args.dirpath:
+            # $PWD tracks symlinks (in bash at least), os.getcwd shows resolved path
+            new_path = find_matching_subtree(pwd, path, True)
+            if new_path:
+                print(new_path)
+                pwd = new_path
+            else:
+                print("Cannot find",sys.argv[1],"in any parent directories.", file=sys.stderr)
+                print(pwd) # back to same path
+    except Exception,e:
+        if debug>0: sys.excepthook(*sys.exc_info())
+        else: print("cdswap error:",e, file=sys.stderr)
+        exitcode = 2
     except:
-      print >>sys.stderr,"Usage: cdswap new_dir\nHunt for directory new_dir in all parent directories and change to the directory as though the current cwd had been swapped for one where the specified directory is used instead of the current one at that level, or the specified directory if the full subtree below it does not exist (as far down as possible to match the current level below it)."
-      print >>sys.stderr,"The easiest use is by defining a shell function:\n\tfunction cdswap () { cd $($(which cdswap) $1); }"
-      # note: you can also add the script into your shell's hash table (won't otherwise as runs in subshell, but doesn't matter if
-      # you're using the above function with 'which' or an explicit path). If you change function name (and hence dont need 'which'
-      # to avoid infinite recursion of cdswap function), you can put it into hash table with:
-      # builtin hash cdswap
+        parser.error("Bad parameters")
+        new_path = find_matching_subtree(pwd, newdir, True)
+        print("No directory given on command line", file=sys.stderr)
+        new_path = False
+        if new_path:
+            print(new_path)
+        elif new_path is not False:
+            print("Cannot find",newdir,"in any parent directories.", file=sys.stderr)
+            print(pwd) # back to same path
+            exitcode = 1
+    sys.exit(exitcode)
