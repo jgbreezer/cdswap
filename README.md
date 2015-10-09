@@ -17,14 +17,14 @@ The easiest use is by defining a shell function (an explicit path would do inste
 	    builtin $cmd $(command cdswap $1 || echo -n . )
 	}
 
-Although I prefer to define an alias cdsw=cdswap for a little less typing.
+Although I prefer to also define an alias cdsw=cdswap for a little less typing.
 
 For instance, given the directory tree with the following paths (and no more):
-  /home/user/trunk/path/to/directory1/
-  /home/user/trunk/path/to/directory1/subdir
-  /home/user/branch/path/to/directory1/subdir
-  /home/user/branch2/path/to
-  /home/user/branch3/extra/subdir/path/to
+    /home/user/trunk/path/to/directory1/
+    /home/user/trunk/path/to/directory1/subdir
+    /home/user/branch/path/to/directory1/subdir
+    /home/user/branch2/path/to
+    /home/user/branch3/extra/subdir/path/to
 
 If your current directory (given by pwd) is /home/user/trunk/path/to/directory1/, using `cdswap branch` will find the 'branch' directory at the same level as the 'trunk' parent, and change directory to /home/user/branch/path/to/directory1, keeping you in the equivalent "directory1" directory.
 If you then `cdswap branch2`, it will find the branch2 directory but only keep the path/to subdirectory as 'directory1' does not exist (it keeps as much as possible from the original path, calling it a match for your directory parameter so no error); you'll be left in /home/user/branch2/path/to .
